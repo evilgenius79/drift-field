@@ -1,0 +1,1350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Drift</title>
+<meta name="description" content="An interactive particle field that swirls toward your cursor."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap"/>
+<style>
+:root {
+  --color-bg: #0c0c0d;
+  --color-surface: #161618;
+  --color-fg: #f4f2ec;
+  --color-muted: #a7a59e;
+  --color-subtle: #7c7b75;
+  --color-border: #2e2e32;
+  --color-accent: #f4f2ec;
+  --color-accent-fg: #141311;
+  --font-display: "Instrument Serif", "Iowan Old Style", Palatino, Georgia, serif;
+  --font-sans: "Instrument Sans", "Avenir Next", "Segoe UI", sans-serif;
+}
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-quick: 150ms;
+  --motion-fast: 250ms;
+}
+
+
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    overscroll-behavior: none;
+  }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+.shell {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #070708;
+  color: var(--color-fg);
+  user-select: none;
+}
+
+.shell[data-bg="void"] {
+  background: #070708;
+}
+.shell[data-bg="graphite"] {
+  background: #14161c;
+}
+.shell[data-bg="depth"] {
+  background: #0b1618;
+}
+.shell[data-bg="paper"] {
+  background: #efece4;
+}
+
+.field-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+  background: #070708;
+}
+
+.shell[data-bg="void"] .field-canvas {
+  background: #070708;
+}
+.shell[data-bg="graphite"] .field-canvas {
+  background: #14161c;
+}
+.shell[data-bg="depth"] .field-canvas {
+  background: #0b1618;
+}
+.shell[data-bg="paper"] .field-canvas {
+  background: #efece4;
+}
+
+.panel {
+  position: absolute;
+  z-index: 2;
+  top: max(16px, env(safe-area-inset-top));
+  left: max(16px, env(safe-area-inset-left));
+  width: min(22rem, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  border-radius: 24px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+  animation: panel-in var(--motion-fast) var(--ease-out);
+}
+
+.panel-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.wordmark {
+  margin: 4px 0 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 2.75rem;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+}
+
+.lede {
+  margin: 8px 0 0;
+  max-width: 28ch;
+  color: var(--color-muted);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+
+.panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.control-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-muted);
+}
+
+.control-value {
+  color: var(--color-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.slider:focus {
+  outline: none;
+}
+
+.slider:focus-visible {
+  outline: 2px solid var(--color-fg);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--color-border);
+  border-radius: 999px;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-fg);
+  box-shadow: 0 0 0 4px var(--color-surface);
+}
+
+.slider::-moz-range-track {
+  height: 2px;
+  background: var(--color-border);
+  border: 0;
+  border-radius: 999px;
+}
+
+.slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-fg);
+}
+
+.group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.group legend {
+  padding: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-muted);
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.choice,
+.swatch,
+.btn,
+.text-btn,
+.reopen {
+  font: inherit;
+  transition:
+    background-color var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    border-color var(--motion-quick) var(--ease-out),
+    transform var(--motion-quick) var(--ease-out);
+}
+
+.choice:active,
+.swatch:active,
+.btn:active,
+.reopen:active {
+  transform: scale(0.98);
+}
+
+.choice {
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-fg);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.choice[aria-pressed="true"] {
+  background: var(--color-fg);
+  color: var(--color-accent-fg);
+  border-color: var(--color-fg);
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 64px;
+  padding: 8px 4px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.swatch[aria-pressed="true"] {
+  color: var(--color-fg);
+  border-color: var(--color-border);
+  background: color-mix(in oklab, var(--color-fg) 8%, transparent);
+}
+
+.swatch-chip {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-fg) 22%, transparent);
+}
+
+.swatch-void {
+  background: #070708;
+}
+.swatch-graphite {
+  background: #14161c;
+}
+.swatch-depth {
+  background: #0b1618;
+}
+.swatch-paper {
+  background: #efece4;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.btn svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.btn-primary {
+  border: 1px solid var(--color-fg);
+  background: var(--color-fg);
+  color: var(--color-accent-fg);
+}
+
+.btn-primary:hover {
+  background: color-mix(in oklab, var(--color-fg) 88%, black);
+}
+
+.btn-ghost {
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-fg);
+}
+
+.btn-ghost:hover {
+  border-color: color-mix(in oklab, var(--color-fg) 28%, var(--color-border));
+}
+
+.hint {
+  margin: 0;
+  color: var(--color-subtle);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.text-btn {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.text-btn:hover {
+  color: var(--color-fg);
+}
+
+.reopen {
+  position: absolute;
+  z-index: 2;
+  top: max(16px, env(safe-area-inset-top));
+  left: max(16px, env(safe-area-inset-left));
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-fg);
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+
+.reopen svg {
+  width: 16px;
+  height: 16px;
+}
+
+.status {
+  position: absolute;
+  z-index: 2;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(12, 12, 13, 0.72);
+  color: var(--color-fg);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.status.is-hot::before {
+  opacity: 1;
+}
+
+.shell[data-bg="paper"] .status {
+  background: rgba(239, 236, 228, 0.82);
+  color: #1c1b18;
+}
+
+.choice:focus-visible,
+.swatch:focus-visible,
+.btn:focus-visible,
+.text-btn:focus-visible,
+.reopen:focus-visible {
+  outline: 2px solid var(--color-fg);
+  outline-offset: 2px;
+}
+
+.fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .wordmark {
+    font-size: 2.15rem;
+  }
+
+  .lede {
+    display: none;
+  }
+
+  .panel {
+    top: auto;
+    right: max(12px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: max(12px, env(safe-area-inset-left));
+    width: auto;
+    max-height: min(52dvh, 460px);
+    padding: 12px;
+    border-radius: 20px;
+  }
+
+  .panel-body {
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .status {
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none;
+  }
+
+  .choice,
+  .swatch,
+  .btn,
+  .text-btn,
+  .reopen {
+    transition: none;
+  }
+
+  .choice:active,
+  .swatch:active,
+  .btn:active,
+  .reopen:active {
+    transform: none;
+  }
+}
+
+</style>
+</head>
+<body>
+<main class="shell" id="shell" data-bg="void">
+<canvas id="field" class="field-canvas" aria-label="Interactive particle field. Move to swirl particles toward the pointer. Click or tap for a pulse."></canvas>
+<div>
+<aside class="panel" id="panel" aria-label="Field controls">
+<div class="panel-top"><div><p class="eyebrow">Particle field</p><h1 class="wordmark">Drift</h1></div><button type="button" class="text-btn" id="hide">Hide</button></div>
+<p class="lede">The field spirals toward your cursor and keeps the path in its trail.</p>
+<div class="panel-body">
+<label class="control"><span class="control-label"><span>Particles</span><span class="control-value" id="count-value">1200</span></span>
+<input class="slider" id="count" type="range" min="150" max="3600" step="50" value="1200" aria-valuemin="150" aria-valuemax="3600" aria-valuenow="1200" aria-valuetext="1200 particles"/></label>
+<label class="control"><span class="control-label"><span>Force</span><span class="control-value" id="force-value">1.00</span></span>
+<input class="slider" id="force" type="range" min="0.2" max="2.5" step="0.05" value="1" aria-valuemin="0.2" aria-valuemax="2.5" aria-valuenow="1" aria-valuetext="Force 1.00"/></label>
+<fieldset class="group"><legend>Color</legend><div class="choices" id="colors"><button type="button" class="choice" data-palette="ember" aria-pressed="true">Ember</button><button type="button" class="choice" data-palette="tide" aria-pressed="false">Tide</button><button type="button" class="choice" data-palette="ash" aria-pressed="false">Ash</button><button type="button" class="choice" data-palette="dusk" aria-pressed="false">Dusk</button></div></fieldset>
+<fieldset class="group"><legend>Background</legend><div class="swatches" id="grounds"><button type="button" class="swatch" data-bg="void" aria-pressed="true"><span class="swatch-chip swatch-void"></span>Void</button><button type="button" class="swatch" data-bg="graphite" aria-pressed="false"><span class="swatch-chip swatch-graphite"></span>Graphite</button><button type="button" class="swatch" data-bg="depth" aria-pressed="false"><span class="swatch-chip swatch-depth"></span>Depth</button><button type="button" class="swatch" data-bg="paper" aria-pressed="false"><span class="swatch-chip swatch-paper"></span>Paper</button></div></fieldset>
+<div class="actions">
+<button type="button" class="btn btn-ghost" id="reset">Reset</button>
+<button type="button" class="btn btn-primary" id="save">Save image</button>
+</div>
+<p class="hint">Click or tap the field for a pulse. Press R to reset.</p>
+</div>
+</aside>
+<button type="button" class="reopen" id="reopen" hidden>Controls</button>
+</div>
+<p class="status" id="status" aria-live="polite">Drifting</p>
+</main>
+<script>
+"use strict";
+var DriftSim = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+  // src/lib/drift-sim.ts
+  var drift_sim_exports = {};
+  __export(drift_sim_exports, {
+    BACKGROUNDS: () => BACKGROUNDS,
+    BACKGROUND_ORDER: () => BACKGROUND_ORDER,
+    COUNT_MAX: () => COUNT_MAX,
+    COUNT_MIN: () => COUNT_MIN,
+    DEFAULT_SETTINGS: () => DEFAULT_SETTINGS,
+    DriftFieldSim: () => DriftFieldSim,
+    FORCE_MAX: () => FORCE_MAX,
+    FORCE_MIN: () => FORCE_MIN,
+    PALETTES: () => PALETTES,
+    PALETTE_ORDER: () => PALETTE_ORDER,
+    loadSettings: () => loadSettings,
+    sanitizeSettings: () => sanitizeSettings,
+    saveSettings: () => saveSettings
+  });
+  var COUNT_MIN = 150;
+  var COUNT_MAX = 3600;
+  var FORCE_MIN = 0.2;
+  var FORCE_MAX = 2.5;
+  var MAX = 3800;
+  var BINS = 12;
+  var SPARK_COUNT = 72;
+  var RIPPLE_COUNT = 4;
+  var PALETTES = {
+    ember: {
+      label: "Ember",
+      halo: "255, 206, 170",
+      stops: [
+        [255, 236, 220],
+        [242, 166, 112],
+        [214, 92, 62],
+        [255, 214, 186]
+      ]
+    },
+    tide: {
+      label: "Tide",
+      halo: "176, 226, 220",
+      stops: [
+        [214, 240, 236],
+        [96, 186, 178],
+        [42, 116, 124],
+        [232, 248, 244]
+      ]
+    },
+    ash: {
+      label: "Ash",
+      halo: "236, 234, 228",
+      stops: [
+        [250, 248, 244],
+        [186, 184, 178],
+        [120, 118, 112],
+        [255, 255, 252]
+      ]
+    },
+    dusk: {
+      label: "Dusk",
+      halo: "230, 198, 186",
+      stops: [
+        [244, 226, 216],
+        [196, 142, 122],
+        [122, 146, 162],
+        [236, 206, 196]
+      ]
+    }
+  };
+  var BACKGROUNDS = {
+    void: { label: "Void", hex: "#070708", ink: false },
+    graphite: { label: "Graphite", hex: "#14161c", ink: false },
+    depth: { label: "Depth", hex: "#0b1618", ink: false },
+    paper: { label: "Paper", hex: "#efece4", ink: true }
+  };
+  var PALETTE_ORDER = ["ember", "tide", "ash", "dusk"];
+  var BACKGROUND_ORDER = ["void", "graphite", "depth", "paper"];
+  var DEFAULT_SETTINGS = {
+    count: 1200,
+    force: 1,
+    palette: "ember",
+    background: "void"
+  };
+  var STORAGE_KEY = "drift-field-v1";
+  function sanitizeSettings(input) {
+    const palette = isPalette(input?.palette) ? input.palette : DEFAULT_SETTINGS.palette;
+    const background = isBackground(input?.background) ? input.background : DEFAULT_SETTINGS.background;
+    let count = Number(input?.count);
+    if (!Number.isFinite(count)) count = DEFAULT_SETTINGS.count;
+    count = Math.round(Math.min(COUNT_MAX, Math.max(COUNT_MIN, count)));
+    let force = Number(input?.force);
+    if (!Number.isFinite(force)) force = DEFAULT_SETTINGS.force;
+    force = Math.min(FORCE_MAX, Math.max(FORCE_MIN, Math.round(force * 100) / 100));
+    return { count, force, palette, background };
+  }
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      return sanitizeSettings(JSON.parse(raw));
+    } catch {
+      return null;
+    }
+  }
+  function saveSettings(settings) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    } catch {
+    }
+  }
+  function isPalette(value) {
+    return typeof value === "string" && value in PALETTES;
+  }
+  function isBackground(value) {
+    return typeof value === "string" && value in BACKGROUNDS;
+  }
+  function sampleStops(stops, t, ink) {
+    const n = stops.length - 1;
+    const x = Math.min(1, Math.max(0, t)) * n;
+    const i = Math.min(n - 1, Math.floor(x));
+    const f = x - i;
+    const a = stops[i];
+    const b = stops[i + 1];
+    let r = a[0] + (b[0] - a[0]) * f;
+    let g = a[1] + (b[1] - a[1]) * f;
+    let bl = a[2] + (b[2] - a[2]) * f;
+    if (ink) {
+      r = r * 0.22 + 28;
+      g = g * 0.2 + 26;
+      bl = bl * 0.18 + 24;
+    }
+    return [Math.round(r), Math.round(g), Math.round(bl)];
+  }
+  var DriftFieldSim = class {
+    x = new Float32Array(MAX);
+    y = new Float32Array(MAX);
+    px = new Float32Array(MAX);
+    py = new Float32Array(MAX);
+    vx = new Float32Array(MAX);
+    vy = new Float32Array(MAX);
+    hue = new Float32Array(MAX);
+    thick = new Uint8Array(MAX);
+    next = new Int32Array(MAX);
+    head = new Int32Array(BINS * 2);
+    sX = new Float32Array(SPARK_COUNT);
+    sY = new Float32Array(SPARK_COUNT);
+    sVx = new Float32Array(SPARK_COUNT);
+    sVy = new Float32Array(SPARK_COUNT);
+    sLife = new Float32Array(SPARK_COUNT);
+    sHue = new Float32Array(SPARK_COUNT);
+    rActive = new Uint8Array(RIPPLE_COUNT);
+    rX = new Float32Array(RIPPLE_COUNT);
+    rY = new Float32Array(RIPPLE_COUNT);
+    rR = new Float32Array(RIPPLE_COUNT);
+    rP = new Float32Array(RIPPLE_COUNT);
+    stroke = [];
+    colorKey = "";
+    hotStroke = "rgba(255,248,240,0.95)";
+    count = DEFAULT_SETTINGS.count;
+    force = DEFAULT_SETTINGS.force;
+    palette = DEFAULT_SETTINGS.palette;
+    background = DEFAULT_SETTINGS.background;
+    reduced = false;
+    hardClear = true;
+    pointerActive = false;
+    onEngage = null;
+    width = 0;
+    height = 0;
+    dpr = 1;
+    time = 0;
+    lastDt = 0.016;
+    seeded = false;
+    aimX = 0;
+    aimY = 0;
+    aimMoved = false;
+    pointerX = 0;
+    pointerY = 0;
+    pointerInit = false;
+    pointerVx = 0;
+    pointerVy = 0;
+    setView(width, height, dpr) {
+      this.width = width;
+      this.height = height;
+      this.dpr = dpr;
+    }
+    setPointer(x, y, active) {
+      this.aimX = x;
+      this.aimY = y;
+      this.aimMoved = true;
+      this.setPointerActive(active);
+    }
+    setPointerActive(active) {
+      if (this.pointerActive === active) return;
+      this.pointerActive = active;
+      if (!active) {
+        this.pointerVx = 0;
+        this.pointerVy = 0;
+      }
+      this.onEngage?.(active);
+    }
+    setCount(n) {
+      const next = Math.max(COUNT_MIN, Math.min(COUNT_MAX, n | 0));
+      if (this.seeded && next > this.count && this.width > 2) {
+        for (let i = this.count; i < next; i++) this.spawn(i);
+      }
+      this.count = next;
+    }
+    reset() {
+      for (let i = 0; i < SPARK_COUNT; i++) this.sLife[i] = 0;
+      for (let r = 0; r < RIPPLE_COUNT; r++) this.rActive[r] = 0;
+      this.pointerVx = 0;
+      this.pointerVy = 0;
+      if (this.width < 2 || this.height < 2) {
+        this.seeded = false;
+        return;
+      }
+      for (let i = 0; i < this.count; i++) this.spawn(i);
+      this.seeded = true;
+      this.hardClear = true;
+    }
+    pulse(x, y) {
+      let slot = 0;
+      for (let r = 0; r < RIPPLE_COUNT; r++) {
+        if (!this.rActive[r]) {
+          slot = r;
+          break;
+        }
+        if (this.rP[r] < this.rP[slot]) slot = r;
+      }
+      this.rActive[slot] = 1;
+      this.rX[slot] = x;
+      this.rY[slot] = y;
+      this.rR[slot] = 12;
+      this.rP[slot] = 1;
+      if (this.seeded) {
+        const reach = 170;
+        for (let i = 0; i < this.count; i++) {
+          const dx = this.x[i] - x;
+          const dy = this.y[i] - y;
+          const d = Math.hypot(dx, dy);
+          if (d > reach || d < 1e-3) continue;
+          const kick = (1 - d / reach) * (280 + this.force * 200);
+          this.vx[i] = this.vx[i] + dx / d * kick;
+          this.vy[i] = this.vy[i] + dy / d * kick;
+        }
+      }
+      for (let k = 0; k < 16; k++) {
+        const a = k / 16 * Math.PI * 2 + Math.random() * 0.18;
+        const sp = 110 + Math.random() * 240;
+        this.spawnSpark(x, y, Math.cos(a) * sp, Math.sin(a) * sp, 0.42 + Math.random() * 0.22);
+      }
+    }
+    step(dt) {
+      this.lastDt = dt;
+      this.time += dt;
+      if (this.width < 2 || this.height < 2) return;
+      if (!this.seeded) {
+        for (let i = 0; i < this.count; i++) this.spawn(i);
+        this.seeded = true;
+        this.hardClear = true;
+      }
+      let pSpeed = 0;
+      if (this.pointerActive && this.aimMoved && this.pointerInit) {
+        const ivx = (this.aimX - this.pointerX) / Math.max(dt, 1e-3);
+        const ivy = (this.aimY - this.pointerY) / Math.max(dt, 1e-3);
+        this.pointerVx = ivx;
+        this.pointerVy = ivy;
+        pSpeed = Math.min(2800, Math.hypot(ivx, ivy));
+      } else if (!this.aimMoved) {
+        this.pointerVx = 0;
+        this.pointerVy = 0;
+      }
+      if (this.aimMoved) {
+        if (!this.pointerInit) {
+          this.pointerInit = true;
+          this.pointerVx = 0;
+          this.pointerVy = 0;
+          pSpeed = 0;
+        }
+        this.pointerX = this.aimX;
+        this.pointerY = this.aimY;
+        this.aimMoved = false;
+      }
+      if (this.pointerActive && pSpeed > 460) {
+        const bursts = pSpeed > 1400 ? 3 : 1;
+        const inv = pSpeed || 1;
+        const pnx = this.pointerVx / inv;
+        const pny = this.pointerVy / inv;
+        for (let s = 0; s < bursts; s++) {
+          const side = s % 2 === 0 ? 1 : -1;
+          this.spawnSpark(
+            this.aimX,
+            this.aimY,
+            -pny * side * (80 + Math.random() * 90) + pnx * 40,
+            pnx * side * (80 + Math.random() * 90) + pny * 40,
+            0.28 + Math.random() * 0.18
+          );
+        }
+      }
+      const aimX = this.aimX;
+      const aimY = this.aimY;
+      const active = this.pointerActive;
+      const spinScale = this.reduced ? 0.28 : 1;
+      const w = this.width;
+      const h = this.height;
+      const damp = Math.exp(-dt * (active ? 0.7 : 1.2));
+      const maxSp = 460 + this.force * 360;
+      for (let r = 0; r < RIPPLE_COUNT; r++) {
+        if (!this.rActive[r]) continue;
+        this.rR[r] = this.rR[r] + dt * (460 + this.force * 70);
+        this.rP[r] = this.rP[r] - dt * 1.35;
+        if (this.rP[r] <= 0 || this.rR[r] > Math.max(w, h)) this.rActive[r] = 0;
+      }
+      for (let i = 0; i < this.count; i++) {
+        const ox = this.x[i];
+        const oy = this.y[i];
+        if (active) {
+          const dx = aimX - ox;
+          const dy = aimY - oy;
+          const dist = Math.hypot(dx, dy) || 1e-4;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          const tx = -ny;
+          const ty = nx;
+          const cross = this.pointerVx * ny - this.pointerVy * nx;
+          const handed = 1 + Math.max(-0.55, Math.min(0.55, cross / 1500));
+          const reach = 1 / (1 + dist * 105e-5);
+          const proximity = Math.exp(-dist / (148 + this.force * 46));
+          let radial = this.force * (420 * reach + 1760 * proximity);
+          let tangent = this.force * spinScale * handed * (120 * reach + 1980 * proximity);
+          const ringR = 24 + this.force * 8;
+          if (dist < ringR) {
+            radial = -this.force * 640 * (1 - dist / ringR);
+            tangent *= 0.4 + 0.6 * (dist / ringR);
+          }
+          this.vx[i] = this.vx[i] + (nx * radial + tx * tangent) * dt;
+          this.vy[i] = this.vy[i] + (ny * radial + ty * tangent) * dt;
+          if (dist < 70 && pSpeed > 90) {
+            const brush = (1 - dist / 70) * Math.min(1, pSpeed / 1e3);
+            const mix = Math.min(1, dt * 24) * brush * (this.reduced ? 0.45 : 1);
+            this.vx[i] = this.vx[i] + (this.pointerVx * 0.72 - this.vx[i]) * mix;
+            this.vy[i] = this.vy[i] + (this.pointerVy * 0.72 - this.vy[i]) * mix;
+          }
+        } else {
+          const cx = w * 0.5 - ox;
+          const cy = h * 0.5 - oy;
+          const cd = Math.hypot(cx, cy) || 1;
+          const idle = this.reduced ? 0.35 : 1;
+          this.vx[i] = this.vx[i] + -cy / cd * 12 * idle * dt;
+          this.vy[i] = this.vy[i] + cx / cd * 12 * idle * dt;
+        }
+        for (let r = 0; r < RIPPLE_COUNT; r++) {
+          if (!this.rActive[r]) continue;
+          const rdx = ox - this.rX[r];
+          const rdy = oy - this.rY[r];
+          const rd = Math.hypot(rdx, rdy) || 1e-4;
+          const delta = rd - this.rR[r];
+          const band = Math.exp(-(delta * delta) / (2 * 36 * 36));
+          const push = this.rP[r] * 2400 * band;
+          this.vx[i] = this.vx[i] + rdx / rd * push * dt;
+          this.vy[i] = this.vy[i] + rdy / rd * push * dt;
+        }
+        const far = active ? Math.hypot(aimX - ox, aimY - oy) > 220 : true;
+        if (!active || far) {
+          const wobble = (active ? 0.28 : 1) * (this.reduced ? 0.4 : 1);
+          const n1 = Math.sin(ox * 27e-4 + this.time * 0.34 + i * 0.17);
+          const n2 = Math.cos(oy * 24e-4 - this.time * 0.28 + i * 0.11);
+          this.vx[i] = this.vx[i] + n1 * 28 * wobble * dt;
+          this.vy[i] = this.vy[i] + n2 * 28 * wobble * dt;
+        }
+        this.vx[i] = this.vx[i] * damp;
+        this.vy[i] = this.vy[i] * damp;
+        const sp = Math.hypot(this.vx[i], this.vy[i]);
+        if (sp > maxSp) {
+          const scale = maxSp / sp;
+          this.vx[i] = this.vx[i] * scale;
+          this.vy[i] = this.vy[i] * scale;
+        }
+        const speed = Math.hypot(this.vx[i], this.vy[i]);
+        let hue = this.hue[i] + dt * (this.reduced ? 0.03 : 0.09) + speed * 115e-5 * dt;
+        if (hue > 1) hue -= Math.floor(hue);
+        this.hue[i] = hue;
+        let nxPos = ox + this.vx[i] * dt;
+        let nyPos = oy + this.vy[i] * dt;
+        let wrapped = false;
+        if (nxPos < -16) {
+          nxPos += w + 32;
+          wrapped = true;
+        } else if (nxPos > w + 16) {
+          nxPos -= w + 32;
+          wrapped = true;
+        }
+        if (nyPos < -16) {
+          nyPos += h + 32;
+          wrapped = true;
+        } else if (nyPos > h + 16) {
+          nyPos -= h + 32;
+          wrapped = true;
+        }
+        this.x[i] = nxPos;
+        this.y[i] = nyPos;
+        if (wrapped) {
+          this.px[i] = nxPos;
+          this.py[i] = nyPos;
+        } else {
+          this.px[i] = ox;
+          this.py[i] = oy;
+        }
+      }
+      for (let i = 0; i < SPARK_COUNT; i++) {
+        if (this.sLife[i] <= 0) continue;
+        this.sLife[i] = this.sLife[i] - dt;
+        this.sX[i] = this.sX[i] + this.sVx[i] * dt;
+        this.sY[i] = this.sY[i] + this.sVy[i] * dt;
+        const drag = Math.exp(-dt * 2.6);
+        this.sVx[i] = this.sVx[i] * drag;
+        this.sVy[i] = this.sVy[i] * drag;
+      }
+    }
+    draw(ctx) {
+      if (this.width < 2 || this.height < 2) return;
+      const bg = BACKGROUNDS[this.background];
+      ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 1;
+      if (this.hardClear || !this.seeded) {
+        ctx.fillStyle = bg.hex;
+        ctx.fillRect(0, 0, this.width, this.height);
+        this.hardClear = false;
+      } else {
+        const density = this.count / 1200;
+        const rate = (bg.ink ? 6.8 : 4.8) * (0.78 + density * 0.32) * (this.reduced ? 2.2 : 1);
+        const fade = 1 - Math.exp(-this.lastDt * rate);
+        ctx.globalAlpha = Math.min(0.42, Math.max(0.015, fade));
+        ctx.fillStyle = bg.hex;
+        ctx.fillRect(0, 0, this.width, this.height);
+        ctx.globalAlpha = 1;
+      }
+      this.refreshColors();
+      this.buildBuckets();
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.globalCompositeOperation = bg.ink ? "source-over" : "lighter";
+      for (let layer = 0; layer < 2; layer++) {
+        ctx.lineWidth = layer === 0 ? 1.15 : 2.35;
+        for (let bin = 0; bin < BINS; bin++) {
+          const b = bin + layer * BINS;
+          let i = this.head[b];
+          if (i < 0) continue;
+          ctx.strokeStyle = this.stroke[bin] ?? this.hotStroke;
+          ctx.beginPath();
+          let any = false;
+          while (i >= 0) {
+            const x = this.x[i];
+            const y = this.y[i];
+            const px = this.px[i];
+            const py = this.py[i];
+            const dx = x - px;
+            const dy = y - py;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < 1e4) {
+              ctx.moveTo(px, py);
+              if (d2 < 0.25) ctx.lineTo(x + 0.9, y);
+              else ctx.lineTo(x, y);
+              any = true;
+            }
+            i = this.next[i];
+          }
+          if (any) ctx.stroke();
+        }
+      }
+      if (this.pointerActive) {
+        const halo = PALETTES[this.palette].halo;
+        const radius = 78 + this.force * 10;
+        const g = ctx.createRadialGradient(this.aimX, this.aimY, 0, this.aimX, this.aimY, radius);
+        if (bg.ink) {
+          ctx.globalCompositeOperation = "source-over";
+          g.addColorStop(0, "rgba(40, 34, 30, 0.07)");
+          g.addColorStop(1, "rgba(40, 34, 30, 0)");
+        } else {
+          ctx.globalCompositeOperation = "lighter";
+          g.addColorStop(0, `rgba(${halo}, 0.22)`);
+          g.addColorStop(1, `rgba(${halo}, 0)`);
+        }
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(this.aimX, this.aimY, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalCompositeOperation = bg.ink ? "source-over" : "lighter";
+      ctx.lineWidth = 1.35;
+      ctx.strokeStyle = this.hotStroke;
+      for (let i = 0; i < SPARK_COUNT; i++) {
+        const life = this.sLife[i];
+        if (life <= 0) continue;
+        ctx.globalAlpha = Math.min(1, life * 2.2) * (bg.ink ? 0.75 : 0.95);
+        const x = this.sX[i];
+        const y = this.sY[i];
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - this.sVx[i] * 0.02, y - this.sVy[i] * 0.02);
+        ctx.stroke();
+      }
+      ctx.lineWidth = 1.2;
+      for (let r = 0; r < RIPPLE_COUNT; r++) {
+        if (!this.rActive[r]) continue;
+        const power = this.rP[r];
+        ctx.globalAlpha = Math.max(0, power) * (bg.ink ? 0.55 : 0.8);
+        const bin = Math.floor(this.time * 3 + r) % BINS;
+        ctx.strokeStyle = this.stroke[bin] ?? this.hotStroke;
+        ctx.beginPath();
+        ctx.arc(this.rX[r], this.rY[r], Math.max(1, this.rR[r]), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "source-over";
+    }
+    spawn(i) {
+      const w = Math.max(this.width, 1);
+      const h = Math.max(this.height, 1);
+      const x = Math.random() * w;
+      const y = Math.random() * h;
+      const dx = x - w * 0.5;
+      const dy = y - h * 0.5;
+      const d = Math.hypot(dx, dy) || 1;
+      const spin = 14 + Math.random() * 24;
+      const vx = -dy / d * spin + (Math.random() - 0.5) * 8;
+      const vy = dx / d * spin + (Math.random() - 0.5) * 8;
+      this.x[i] = x;
+      this.y[i] = y;
+      this.vx[i] = vx;
+      this.vy[i] = vy;
+      this.px[i] = x - vx * 0.016;
+      this.py[i] = y - vy * 0.016;
+      this.hue[i] = Math.random();
+      this.thick[i] = Math.random() < 0.18 ? 1 : 0;
+    }
+    spawnSpark(x, y, vx, vy, life) {
+      let slot = 0;
+      let lowest = this.sLife[0];
+      for (let i = 0; i < SPARK_COUNT; i++) {
+        if (this.sLife[i] <= 0) {
+          slot = i;
+          lowest = -1;
+          break;
+        }
+        if (this.sLife[i] < lowest) {
+          lowest = this.sLife[i];
+          slot = i;
+        }
+      }
+      this.sX[slot] = x;
+      this.sY[slot] = y;
+      this.sVx[slot] = vx;
+      this.sVy[slot] = vy;
+      this.sLife[slot] = life;
+      this.sHue[slot] = Math.random();
+    }
+    refreshColors() {
+      const ink = BACKGROUNDS[this.background].ink;
+      const key = `${this.palette}:${ink ? "ink" : "glow"}`;
+      if (key === this.colorKey && this.stroke.length === BINS) return;
+      this.colorKey = key;
+      const stops = PALETTES[this.palette].stops;
+      const alpha = ink ? 0.72 : 0.8;
+      const stroke = [];
+      for (let i = 0; i < BINS; i++) {
+        const [r, g, b] = sampleStops(stops, i / (BINS - 1), ink);
+        stroke.push(`rgba(${r},${g},${b},${alpha})`);
+      }
+      this.stroke = stroke;
+      this.hotStroke = ink ? "rgba(42,36,32,0.9)" : "rgba(255,248,240,0.92)";
+    }
+    buildBuckets() {
+      for (let b = 0; b < BINS * 2; b++) this.head[b] = -1;
+      const aimX = this.pointerActive ? this.aimX : this.width * 0.5;
+      const aimY = this.pointerActive ? this.aimY : this.height * 0.5;
+      for (let i = 0; i < this.count; i++) {
+        const ang = Math.atan2(this.y[i] - aimY, this.x[i] - aimX);
+        let t = this.hue[i] + ang / (Math.PI * 2) * 0.22 + this.time * 0.015;
+        t -= Math.floor(t);
+        const bin = Math.min(BINS - 1, t * BINS | 0);
+        const layer = this.thick[i] ? 1 : 0;
+        const b = bin + layer * BINS;
+        this.next[i] = this.head[b];
+        this.head[b] = i;
+      }
+    }
+  };
+  return __toCommonJS(drift_sim_exports);
+})();
+
+</script>
+<script>
+const S = DriftSim;
+let settings = S.loadSettings() || { ...S.DEFAULT_SETTINGS };
+const sim = new S.DriftFieldSim();
+const canvas = document.getElementById("field");
+const shell = document.getElementById("shell");
+const panel = document.getElementById("panel");
+const reopen = document.getElementById("reopen");
+const statusEl = document.getElementById("status");
+const countInput = document.getElementById("count");
+const forceInput = document.getElementById("force");
+const countValue = document.getElementById("count-value");
+const forceValue = document.getElementById("force-value");
+const saveBtn = document.getElementById("save");
+const ctx = canvas.getContext("2d", { alpha: false });
+
+sim.onEngage = (active) => {
+  statusEl.textContent = active ? "Curling toward you" : "Drifting";
+  statusEl.classList.toggle("is-hot", active);
+};
+
+function paintSettings() {
+  shell.dataset.bg = settings.background;
+  countInput.value = String(settings.count);
+  forceInput.value = String(settings.force);
+  countValue.textContent = String(settings.count);
+  forceValue.textContent = settings.force.toFixed(2);
+  countInput.setAttribute("aria-valuenow", String(settings.count));
+  countInput.setAttribute("aria-valuetext", settings.count + " particles");
+  forceInput.setAttribute("aria-valuenow", String(settings.force));
+  forceInput.setAttribute("aria-valuetext", "Force " + settings.force.toFixed(2));
+  document.querySelectorAll("[data-palette]").forEach((btn) => {
+    btn.setAttribute("aria-pressed", btn.dataset.palette === settings.palette ? "true" : "false");
+  });
+  document.querySelectorAll(".swatch").forEach((btn) => {
+    btn.setAttribute("aria-pressed", btn.dataset.bg === settings.background ? "true" : "false");
+  });
+}
+
+function update(partial) {
+  settings = S.sanitizeSettings({ ...settings, ...partial });
+  S.saveSettings(settings);
+  paintSettings();
+}
+
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, rect.width);
+  const h = Math.max(1, rect.height);
+  const bw = Math.round(w * dpr);
+  const bh = Math.round(h * dpr);
+  if (canvas.width !== bw || canvas.height !== bh) {
+    canvas.width = bw;
+    canvas.height = bh;
+    sim.hardClear = true;
+  }
+  sim.setView(w, h, dpr);
+}
+
+function stamp(date) {
+  const p = (n) => String(n).padStart(2, "0");
+  return (
+    date.getFullYear() +
+    p(date.getMonth() + 1) +
+    p(date.getDate()) +
+    "-" +
+    p(date.getHours()) +
+    p(date.getMinutes()) +
+    p(date.getSeconds())
+  );
+}
+
+document.getElementById("hide").addEventListener("click", () => {
+  panel.hidden = true;
+  reopen.hidden = false;
+});
+reopen.addEventListener("click", () => {
+  panel.hidden = false;
+  reopen.hidden = true;
+});
+countInput.addEventListener("input", () => update({ count: Number(countInput.value) }));
+forceInput.addEventListener("input", () => update({ force: Number(forceInput.value) }));
+document.getElementById("colors").addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-palette]");
+  if (!btn) return;
+  update({ palette: btn.dataset.palette });
+});
+document.getElementById("grounds").addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-bg]");
+  if (!btn) return;
+  update({ background: btn.dataset.bg });
+});
+document.getElementById("reset").addEventListener("click", () => sim.reset());
+saveBtn.addEventListener("click", () => {
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "drift-" + stamp(new Date()) + ".png";
+    link.click();
+    URL.revokeObjectURL(url);
+    const label = saveBtn.lastChild;
+    if (label) label.textContent = " Saved";
+    setTimeout(() => {
+      if (label) label.textContent = " Save image";
+    }, 1600);
+  }, "image/png");
+});
+
+window.addEventListener(
+  "pointermove",
+  (event) => {
+    if (panel.contains(event.target) || reopen.contains(event.target)) {
+      sim.setPointerActive(false);
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    sim.setPointer(event.clientX - rect.left, event.clientY - rect.top, true);
+  },
+  { passive: true },
+);
+window.addEventListener(
+  "pointerdown",
+  (event) => {
+    if (panel.contains(event.target) || reopen.contains(event.target)) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
+    event.preventDefault();
+    sim.setPointer(x, y, true);
+    sim.pulse(x, y);
+  },
+  { passive: false },
+);
+window.addEventListener("blur", () => sim.setPointerActive(false));
+document.documentElement.addEventListener("pointerleave", () => sim.setPointerActive(false));
+window.addEventListener("keydown", (event) => {
+  if (event.key !== "r" && event.key !== "R") return;
+  if (event.target instanceof HTMLInputElement) return;
+  sim.reset();
+});
+
+new ResizeObserver(resize).observe(canvas);
+resize();
+paintSettings();
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.033, (now - last) / 1000);
+  last = now;
+  sim.force = settings.force;
+  sim.reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (sim.palette !== settings.palette) sim.palette = settings.palette;
+  if (sim.background !== settings.background) {
+    sim.background = settings.background;
+    sim.hardClear = true;
+  }
+  sim.setCount(settings.count);
+  sim.step(dt);
+  sim.draw(ctx);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>
